@@ -1,0 +1,272 @@
+---
+title: "Food Price Forecasting"
+author: "Sanjeev N S"
+date: "2023-12-11"
+output: html_document
+---
+<span style="color: blue;">**Importing datasets**</span>
+```{r}
+dataset <- read.csv("D:\\Desktop FILES\\7TH SEM\\FDA\\india.csv")
+
+```
+*The above is the main dataset which has food prices from year 2000-2019
+```{r}
+val <- read.csv("D:\\Desktop FILES\\7TH SEM\\FDA\\india_2019.csv")
+
+```
+*The above is the validation dataset which has food prices from year 2019-2020
+<span style="color: blue;">**Loading required packages**</span>
+```{r}
+library(dplyr)
+library(vars)
+library(forecast)
+library(ggplot2)
+library(prophet)
+library(corrplot)
+library(xgboost)
+```
+
+<span style="color: blue;">**basic analysis of dataset**</span>
+```{r}
+head(dataset,7)
+tail(dataset,5)
+head(val,6)
+tail(val,6)
+```
+
+```{r}
+summary(dataset)
+str(dataset)
+```
+
+```{r}
+summary(val)
+str(val)
+
+```
+<span style="color: blue;">**Missing Value analysis**</span>
+```{r}
+colSums(is.na(dataset))
+```
+```{r}
+colSums(is.na(val))
+```
+
+<span style="color: blue;">**missing value imputaion with mean**</span>
+```{r}
+dataset <- dataset %>%
+  mutate_if(is.numeric, ~ifelse(is.na(.), mean(., na.rm = TRUE), .))
+
+colSums(is.na(dataset))
+```
+
+```{r}
+val <- val %>%
+  mutate_if(is.numeric, ~ifelse(is.na(.), mean(., na.rm = TRUE), .))
+
+colSums(is.na(val))
+```
+<span style="color: blue;">**visualizations**</span>
+
+```{r}
+hist(dataset$Rice, main = "Rice Price Distribution", xlab = "Rice Price")
+
+```
+```{r}
+ggplot(dataset, aes(y =Chickpeas )) +
+  geom_boxplot(fill = "green") +
+  labs(title = "Box Plot: chickpeas Prices", y = "checkpeas Price")
+
+```
+
+```{r}
+ggplot(dataset, aes(y =Chickpeas )) +
+  geom_boxplot(fill = "red") +
+  labs(title = "Box Plot: Oil..mustard. Prices", y = "Oil..mustard. Price")
+```
+
+```{r}
+ggplot(dataset, aes(y =Potatoes )) +
+  geom_boxplot(fill = "cadetblue1") +
+  labs(title = "Box Plot: Potatoes Prices", y = "Potatoes Price")
+```
+```{r}
+ggplot(dataset, aes(y =Rice )) +
+  geom_boxplot(fill = "gold1") +
+  labs(title = "Box Plot: Rice Prices", y = "Rice Price")
+```
+
+```{r}
+ggplot(dataset, aes(y =Sugar )) +
+  geom_boxplot(fill = "darkseagreen2") +
+  labs(title = "Box Plot: Sugar Prices", y = "sugar Price")
+```
+```{r}
+ggplot(dataset, aes(y =Wheat )) +
+  geom_boxplot(fill = "slategray3") +
+  labs(title = "Box Plot: Wheat Prices", y = "Wheat  Price")
+```
+
+from these visualizations, we can infer that except Oil..mustard price,all other price has outliers in it.next part in EDA is to identify outliers and impute it with mean
+
+
+
+<span style="color: blue;">**data type conversion**</span>
+converting date atribute from "string" datatype to "date" datatype
+```{r}
+dataset$date <- as.Date(dataset$date,format="%Y-%m")
+class(dataset$date)
+```
+```{r}
+val$date <- as.Date(val$date,format="%Y-%m")
+class(val$date)
+```
+<span style="color: blue;">**FORECASTING MODELS**</span>
+```{r}
+cat("\n")
+```
+<span style="color: blue;">**ARIMA MODEL**</span>
+```{r}
+# Create a time series object
+rice_ts <- ts(dataset$Rice, frequency = 12, start = c(2000, 2))
+arima_model <- auto.arima(rice_ts)
+forecast_values <- forecast(arima_model, h = 12)
+print(forecast_values)
+```
+
+
+```{r}
+point_forecasts <- forecast_values$mean
+point_forecasts
+error_arima <- abs(sum(point_forecasts-val$Rice)/12)
+error_arima
+```
+<span style="color: blue;">**Exponential Smoothing (ETS)**</span>
+```{r}
+ets_model <- ets(rice_ts)
+forecast_values_ets <- forecast(ets_model, h = 12)
+print(forecast_values_ets)
+```
+
+```{r}
+point_forecasts <- forecast_values_ets$mean
+point_forecasts
+error_ETS <- abs(sum(point_forecasts-val$Rice)/12)
+error_ETS
+```
+<span style="color: blue;">**SARIMA (Seasonal ARIMA)**</span>
+```{r}
+sarima_model <- arima(rice_ts, order = c(1, 1, 1), seasonal = list(order = c(2, 1, 1)), method = "CSS")
+forecast_values_sarima <- forecast(sarima_model, h = 12)
+print(forecast_values_sarima)
+```
+
+```{r}
+point_forecasts <- forecast_values_sarima$mean
+error_SARIMA <- abs(sum(point_forecasts-val$Rice)/12)
+error_SARIMA
+```
+<span style="color: blue;">**VECTOR AUTOREGRESSION MODEL[VAR]**</span>
+```{r}
+multivariate_data <- dataset[, c("Rice", "Wheat")]
+
+# Convert the data to time series format
+ts_data <- ts(multivariate_data, frequency = 12, start = c(2000, 2))
+
+# Fit VAR model
+var_model <- VAR(ts_data, p = 1)  # Specify the lag order (p) based on your data
+
+
+forecast_horizon <- 12 
+forecast_values_var <- predict(var_model, n.ahead = forecast_horizon)[]
+
+```
+
+
+```{r}
+# Print the point forecast values
+print(forecast_values_var$fcst$Rice[,1])
+```
+```{r}
+error_VAR <- abs(sum(forecast_values_var$fcst$Rice[,1]-val$Rice)/12)
+error_VAR
+```
+
+<span style="color: blue;">**validation**</span>
+<span style="color: blue;">comparision of forecasting models</span>
+```{r}
+cat("ARIMA ERROR: ", error_arima, "\n")
+cat("Exponential Smoothing ERROR: ", error_ETS, "\n")
+cat("SARIMA ERROR: ", error_SARIMA, "\n")
+cat("Vector Autoregression (VAR): ", error_VAR, "\n")
+```
+```{r}
+best_model <- ifelse(abs(error_arima) <= abs(error_SARIMA )& abs(error_arima) <= abs(error_ETS) & abs(error_arima) <= abs(error_VAR), "ARIMA",
+                   ifelse(abs(error_ETS) <= abs(error_arima) & abs(error_ETS) <= abs(error_SARIMA) & abs(error_ETS) <= abs(error_VAR), "Exponential Smoothing",
+                   ifelse(abs(error_VAR) <= abs(error_SARIMA) & abs(error_VAR) <= abs(error_ETS), "Vector Autoregression (VAR)", "SARIMA(Seasonal ARIMA)")))
+
+print(best_model)
+
+```
+```{r}
+
+```
+```{r}
+models <- c("ARIMA", "Exponential Smoothing", "SARIMA","Vector Autoregression (VAR)")
+error_values <- c(error_arima,error_ETS,error_SARIMA,error_VAR)
+
+# Create a data frame
+error_data <- data.frame(Model = models, ERROR = error_values)
+
+ggplot(error_data, aes(x = Model, y = ERROR)) +
+  geom_bar(stat = "identity", fill = "yellow2") +
+  labs(title = "ERROR for Different forecasting Models",
+       x = "Model",
+       y = "ERROR") +
+  theme_minimal()
+```
+
+<span style="color: black;/n">we can observe visually that SARIMA model has less error than other models,so SARIMA model is a best model to forecast the prices</span>
+
+```{r}
+combined_forecast <- cbind(
+  arima = forecast_values$mean,
+  ets = forecast_values_ets$mean,
+  sarima = forecast_values_sarima$mean
+  #var = forecast_values_var$fcst$Rice[, 1]
+)
+```
+```{r}
+# Train gradient boosting model
+xgb_model <- xgboost(data = as.matrix(combined_forecast), label = as.numeric(head(rice_ts, nrow(combined_forecast))), nrounds = 100, objective = "reg:squarederror")
+
+# Make final forecast
+final_forecast <- predict(xgb_model, as.matrix(combined_forecast))
+
+# Print final forecast
+print(final_forecast)
+
+```
+
+
+```{r}
+point_forecasts <- final_forecast
+error_ensemble <- abs(sum(point_forecasts-val$Rice)/12)
+abs(error_ensemble)
+```
+```{r}
+models <- c("ARIMA", "Exponential Smoothing", "SARIMA","Ensemble model")
+error_values <- c(error_arima,error_ETS,error_SARIMA,error_ensemble)
+
+# Create a data frame
+error_data <- data.frame(Model = models, ERROR = error_values)
+
+ggplot(error_data, aes(x = Model, y = ERROR)) +
+  geom_bar(stat = "identity", fill = "yellow2") +
+  labs(title = "ERROR for Different forecasting Models",
+       x = "Model",
+       y = "ERROR") +
+  theme_minimal()
+```
+
+
